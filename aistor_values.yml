@@ -1,0 +1,22 @@
+secrets:
+  name: aistor-server-env
+  accessKey: "admin"
+  secretKey: "admin1234"
+
+objectStore:
+  name: aistor-server
+
+  pools:
+    - name: pool-0
+      servers: 1
+      volumesPerServer: 1
+      size: 1Gi
+      storageClassName: local-path
+
+  services:
+    minio:
+      name: aistor-server
+      serviceType: ClusterIP
+    console:
+      name: aistor-server-console
+      serviceType: ClusterIP

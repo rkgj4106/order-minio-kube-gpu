@@ -1,0 +1,114 @@
+# 기존 대시보드 30111과 별개인 주문 상담 화면. Ollama와 MinIO 설정을 재사용합니다.
+# 아래 OLLAMA_URL/OLLAMA_MODEL을 현재 Service/namespace 및 설치 모델 태그에 맞추세요.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-chat-config
+data:
+  OLLAMA_URL: "http://ollama.default.svc.cluster.local:11434"
+  OLLAMA_MODEL: "gemma3:12b"
+  OLLAMA_TIMEOUT: "180"
+  MINIO_VERIFY_SSL: "false"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-chat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: order-chat
+  template:
+    metadata:
+      labels:
+        app: order-chat
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: chat
+          image: yklee2002/order-chat
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: order-chat-config
+          env:
+            - name: MINIO_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: order-etl-config
+                  key: MINIO_ENDPOINT
+            - name: MINIO_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: order-etl-config
+                  key: MINIO_BUCKET
+            - name: MINIO_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: order-etl-config
+                  key: MINIO_PREFIX
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: order-etl-secret
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: order-etl-secret
+                  key: MINIO_SECRET_KEY
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-chat
+spec:
+  type: NodePort
+  selector:
+    app: order-chat
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      nodePort: 30112

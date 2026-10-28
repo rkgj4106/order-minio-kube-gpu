@@ -1,0 +1,85 @@
+# Student Lab Step 1: MySQL Orders -> Parquet -> MinIO
+# Values to update first:
+# 1) MINIO_ENDPOINT: Actual S3 API Service DNS and port
+# 2) The three CHANGE_ME_* values in the Secret: Actual credentials
+# 3) Deployment image: Actual image name after building and pushing
+# The application namespace is default. To change it, update all three metadata.namespace fields.
+# If MySQL is in another namespace, specify the full Service DNS in MYSQL_HOST.
+# Apply: kubectl apply -f order-etl.yaml
+# View logs: kubectl -n default logs -f deployment/order-etl
+# After changing configuration: kubectl -n default rollout restart deployment/order-etl
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: order-etl-config
+data:
+  MYSQL_HOST: "mysql.default.svc.cluster.local"
+  MYSQL_PORT: "3306"
+  MYSQL_USER: "stud12"
+  MYSQL_DATABASE: "stud12"
+  MYSQL_TABLE: "orders"
+  # Example endpoint: Run kubectl get svc -A to check the actual S3 Service, namespace, and port.
+  MINIO_ENDPOINT: "https://aistor-server.aistor-server.svc.cluster.local:443"
+  MINIO_BUCKET: "warehouse"
+  MINIO_PREFIX: "stud12"
+  CREATE_BUCKET: "true"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: order-etl-secret
+type: Opaque
+stringData:
+  MYSQL_PASSWORD: "stud12"
+  MINIO_ACCESS_KEY: "admin"
+  MINIO_SECRET_KEY: "admin1234"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-etl
+spec:
+  # Keep one replica because a single ETL instance must update the checkpoint.
+  replicas: 1
+  # Prevent the old and new Pods from collecting data simultaneously during image updates.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: order-etl
+  template:
+    metadata:
+      labels:
+        app: order-etl
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      # If using a private registry, specify an existing image pull Secret below.
+      # imagePullSecrets:
+      #   - name: registry-credentials
+      containers:
+        - name: etl
+          image: "yklee2002/etl-minio"
+          imagePullPolicy: Always
+          command: ["python", "-u", "/app/etl_orders_minio.py"]
+          envFrom:
+            - configMapRef:
+                name: order-etl-config
+            - secretRef:
+                name: order-etl-secret
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]

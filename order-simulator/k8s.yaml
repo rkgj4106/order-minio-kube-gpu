@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: order-simulator
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: order-simulator
+
+  template:
+    metadata:
+      labels:
+        app: order-simulator
+
+    spec:
+      containers:
+
+        - name: order-simulator
+
+          image: yklee2002/order-simulator
+
+          imagePullPolicy: Always
+
+          env:
+            - name: DB_HOST
+              value: "mysql.default.svc.cluster.local"
+
+            - name: DB_PORT
+              value: "3306"
+
+            - name: DB_NAME
+              value: "stud12"
+
+            - name: DB_USER
+              value: "stud12"
+
+            - name: DB_PASSWORD
+              value: "stud12"
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
